@@ -1,0 +1,44 @@
+# Maintainer: th3cavalry <github.com/th3cavalry>
+pkgname=strix-halo-setup
+pkgver=6.8.0
+pkgrel=1
+pkgdesc="Linux optimization suite for ASUS ROG Flow Z13 (GZ302) — z13ctl backend"
+arch=('any')
+url="https://github.com/th3cavalry/strix-halo-linux-setup"
+license=('MIT')
+depends=('bash' 'curl')
+optdepends=(
+    'python-pyqt6: System tray command center'
+    'python-psutil: Battery monitoring in tray app'
+    'z13ctl: Hardware control backend (installed by setup)'
+    'steam: Gaming support (optional module)'
+    'ollama: AI support (optional module)'
+)
+source=("${url}/archive/refs/heads/main.zip")
+sha256sums=('SKIP')
+
+package() {
+    cd "$srcdir/GZ302-Linux-Setup-main"
+
+    # Install main setup script
+    install -Dm755 strix-halo-setup.sh "$pkgdir/usr/local/bin/strix-halo-setup"
+
+    # Install libraries
+    install -d "$pkgdir/usr/local/share/strix-halo/strix-halo-lib"
+    install -Dm644 strix-halo-lib/*.sh "$pkgdir/usr/local/share/strix-halo/strix-halo-lib/"
+    install -Dm644 VERSION "$pkgdir/usr/local/share/strix-halo/VERSION"
+
+    # Install optional modules
+    install -d "$pkgdir/usr/local/share/strix-halo/modules"
+    install -Dm644 modules/*.sh "$pkgdir/usr/local/share/strix-halo/modules/"
+
+    # Install tray app
+    install -d "$pkgdir/usr/local/share/strix-halo/command-center"
+    cp -r command-center/* "$pkgdir/usr/local/share/strix-halo/command-center/"
+
+    # Install scripts
+    install -d "$pkgdir/usr/local/share/strix-halo/scripts"
+    install -Dm755 scripts/fix-suspend.sh "$pkgdir/usr/local/share/strix-halo/scripts/"
+    install -d "$pkgdir/usr/local/share/strix-halo/scripts/uninstall"
+    install -Dm755 scripts/uninstall/uninstall.sh "$pkgdir/usr/local/share/strix-halo/scripts/uninstall/"
+}
