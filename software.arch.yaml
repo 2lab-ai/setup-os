@@ -9,3 +9,11 @@ xbrew:
   - telegram >= 6.9.3
   - slack >= 4.50.143
   - nomachine >= 9.7.3
+
+  # Pre-installed here (step 3, via xbrew --noconfirm) so the Strix Halo hardware
+  # step (step 6) adopts them instead of driving interactive AUR/yay builds.
+  - yay-bin              # AUR helper (prebuilt) — strix-halo base skips building yay
+  - z13ctl >= 1.2.0      # GZ302 hardware control (recipe -> AUR z13ctl-bin)
+  - python-pyqt6         # Strix Halo dashboard (tray) deps
+  - python-psutil
+  - python-dbus
