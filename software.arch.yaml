@@ -1,0 +1,11 @@
+# ==============================================================================
+# software.arch.yaml — Arch / CachyOS-specific apps (applied after software.yaml)
+#
+# Desktop apps whose versions track the pacman/AUR builds on this platform.
+# Tags pinned to what was installed locally on 2026-07-08.
+# ==============================================================================
+
+xbrew:
+  - telegram >= 6.9.3
+  - slack >= 4.50.143
+  - nomachine >= 9.7.3

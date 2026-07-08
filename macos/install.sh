@@ -53,10 +53,10 @@ EOF
 ensure_block "$HOME/.zprofile" "path" "$posix_block"
 success "updated .zprofile"
 
-# 3) apps
-section "3) Apps (software.yaml)"
-SW_YAML="$(grab software.yaml)"
-install_software "$SW_YAML" || warning "Some apps failed — see summary (safe to re-run)."
+# 3) apps: common software.yaml + macOS-specific software.macos.yaml
+section "3) Apps (software.yaml + software.macos.yaml)"
+install_software "$(grab software.yaml)" "$(grab software.macos.yaml)" \
+    || warning "Some apps failed — see summary (safe to re-run)."
 
 section "✅ Done — macOS (placeholder)"
 info "TODO: system defaults, dock, app config — coming later."

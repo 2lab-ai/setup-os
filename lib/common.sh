@@ -99,8 +99,14 @@ ensure_block() {
     else
         { cat "$file"; printf '\n%s\n%s\n%s\n' "$begin" "$content" "$end"; } > "$tmp"
     fi
+    # Report whether anything actually changed: 0 = modified, 1 = already current.
+    if cmp -s "$tmp" "$file"; then
+        rm -f "$tmp"
+        return 1
+    fi
     cat "$tmp" > "$file"
     rm -f "$tmp"
+    return 0
 }
 
 # --- xbrew --------------------------------------------------------------------
@@ -151,26 +157,83 @@ ensure_homebrew() {
     success "Homebrew installed (via xbrew)"
 }
 
-# --- Software manifest installer ----------------------------------------------
-# install_software <software.yaml>
-# trust: -> `brew tap` (Homebrew comes via `xbrew install brew`); then EVERYTHING
-# installs through `xbrew install` (routes to brew / pacman / AUR / recipe).
-install_software() {
-    local yaml="$1"
-    [[ -f "$yaml" ]] || die "software manifest not found: $yaml"
-    local -a ok=() fail=()
+# --- Version helpers ----------------------------------------------------------
+# Pull the first dotted version out of arbitrary `--version` output.
+_extract_ver() { grep -oE '[0-9]+(\.[0-9]+){1,}' | head -1; }
 
+# installed_version <manifest-name> -> prints the upstream dotted version, or "".
+# Resolves per the backend xbrew recorded (pacman/aur -> pacman -Q, brew ->
+# brew list, script/unknown -> ask the tool itself).
+installed_version() {
+    local name="$1" backend="" ref=""
+    if [[ -f "$HOME/.xbrew/state.json" ]]; then
+        read -r backend ref < <(awk -v k="\"$name\":" '
+            index($0, k)        { f=1 }
+            f && /"backend"/    { gsub(/[",]/,""); b=$2 }
+            f && /"reference"/  { gsub(/[",]/,""); print b, $2; exit }
+        ' "$HOME/.xbrew/state.json")
+    fi
+    case "$backend" in
+        pacman|aur)
+            have pacman && pacman -Q "$ref" 2>/dev/null \
+                | awk '{print $2}' | sed -E 's/^[0-9]+://; s/-[0-9.]+$//'
+            ;;
+        brew)
+            brew_bin >/dev/null 2>&1 && "$(brew_bin)" list --versions "$ref" 2>/dev/null | awk '{print $NF}'
+            ;;
+        *)  # script backend or not-yet-recorded -> ask the tool directly
+            case "$name" in
+                brew)        brew_bin >/dev/null 2>&1 && "$(brew_bin)" --version 2>/dev/null | _extract_ver ;;
+                claude-code) have claude && claude --version 2>/dev/null | _extract_ver ;;
+                *)           have "$name" && "$name" --version 2>/dev/null | _extract_ver ;;
+            esac
+            ;;
+    esac
+}
+
+# version_satisfies <current> <op> <required>
+#   returns 0 = ok, 1 = constraint violated, 2 = current version unknown
+version_satisfies() {
+    local a="$1" op="$2" b="$3"
+    [[ -z "$op" || -z "$b" ]] && return 0     # no constraint
+    [[ -z "$a" ]] && return 2                  # can't tell
+    local lo; lo="$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -1)"
+    case "$op" in
+        "=="|"=") [[ "$a" == "$b" ]] ;;
+        ">=")     [[ "$a" == "$b" || "$lo" == "$b" ]] ;;
+        ">")      [[ "$a" != "$b" && "$lo" == "$b" ]] ;;
+        "<=")     [[ "$a" == "$b" || "$lo" == "$a" ]] ;;
+        "<")      [[ "$a" != "$b" && "$lo" == "$a" ]] ;;
+        *) return 0 ;;
+    esac
+}
+
+# --- Software manifest installer ----------------------------------------------
+# install_software <manifest.yaml> [manifest2.yaml ...]
+# Processes manifests in order (e.g. common software.yaml + per-OS software.arch.yaml).
+# `trust:` -> `brew tap` (Homebrew itself comes via `xbrew install brew`); then
+# every `xbrew:` entry installs through `xbrew install` (brew / pacman / AUR / recipe),
+# and any `name OP version` constraint is verified against the resolved version.
+#
+# NOTE: manifest parsing + version resolution/enforcement is the "heavy" part that
+# is planned to move into an `xbrew bundle` subcommand (Rust); this shell path is
+# the interim that works with released xbrew today.
+install_software() {
+    local -a manifests=("$@")
+    ((${#manifests[@]})) || die "install_software: no manifest given"
+    local m
+    for m in "${manifests[@]}"; do [[ -f "$m" ]] || die "manifest not found: $m"; done
+
+    local -a ok=() fail=()
     ensure_xbrew
     local xb; xb="$(xbrew_bin)"
 
-    # ---- Trust custom Homebrew taps FIRST, so xbrew's brew backend can resolve
-    #      formulae published there (our own tools on 2lab-ai/tap). brew itself
-    #      is installed by xbrew (recipe: brew), not by any curl|bash. ----
-    local taps; taps="$(yaml_list "$yaml" trust)"
+    # ---- Trust custom Homebrew taps FIRST (from all manifests), so xbrew's brew
+    #      backend can resolve formulae published there (our 2lab-ai/tap). ----
+    local taps; taps="$(for m in "${manifests[@]}"; do yaml_list "$m" trust; done | awk 'NF && !seen[$0]++')"
     if [[ -n "$taps" ]]; then
         if ensure_homebrew; then
-            local bb; bb="$(brew_bin)"
-            local t
+            local bb; bb="$(brew_bin)" t
             while IFS= read -r t; do
                 [[ -z "$t" ]] && continue
                 log "trust tap: $t"
@@ -181,20 +244,40 @@ install_software() {
         fi
     fi
 
-    # ---- Everything installs through xbrew ----
-    local xpkgs; xpkgs="$(yaml_list "$yaml" xbrew)"
-    local pkg
-    while IFS= read -r pkg; do
-        [[ -z "$pkg" ]] && continue
-        log "xbrew install $pkg"
-        if "$xb" install "$pkg"; then ok+=("$pkg"); else fail+=("$pkg"); fi
-    done <<< "$xpkgs"
+    # ---- Install every xbrew: entry (order preserved, duplicates collapsed) ----
+    local entries; entries="$(for m in "${manifests[@]}"; do yaml_list "$m" xbrew; done | awk 'NF && !seen[$0]++')"
+    local line name op ver cur rc
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        read -r name op ver _ <<< "$line"
+        log "xbrew install ${name}${op:+ (need $op $ver)}"
+        if ! "$xb" install "$name"; then
+            fail+=("$name — install failed"); continue
+        fi
+        cur="$(installed_version "$name" 2>/dev/null || true)"
+        if [[ -z "$op" ]]; then
+            ok+=("$name${cur:+ $cur}")
+        elif version_satisfies "$cur" "$op" "$ver"; then
+            ok+=("$name ${cur:-?} (need $op $ver ✓)")
+        else
+            rc=$?
+            if [[ "$rc" == "2" || -z "$cur" ]]; then
+                warning "$name installed but version unreadable — cannot verify need $op $ver"
+                ok+=("$name (installed; version unverified, wanted $op $ver)")
+            else
+                warning "$name $cur does NOT satisfy need $op $ver"
+                fail+=("$name $cur — need $op $ver")
+            fi
+        fi
+    done <<< "$entries"
 
     # ---- Report ----
     section "Software summary"
-    ((${#ok[@]}))   && success "installed/ok: ${ok[*]}"
+    local i
+    ((${#ok[@]})) && { success "ok (${#ok[@]}):"; for i in "${ok[@]}"; do info "$i"; done; }
     if ((${#fail[@]})); then
-        warning "failed (re-run after fixing, or add an xbrew recipe): ${fail[*]}"
+        warning "failed (${#fail[@]}) — re-run after fixing, or add/adjust an xbrew recipe:"
+        for i in "${fail[@]}"; do warning "  $i"; done
         return 1
     fi
     return 0

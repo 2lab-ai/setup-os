@@ -65,6 +65,11 @@ ensure_xbrew
 section "2) Shell PATH"
 configure_shell_path() {
     local brew_prefix="/home/linuxbrew/.linuxbrew"
+    info "Managed PATH entries (prepended, login shells):"
+    info "  • \$HOME/.xbrew/bin      (xbrew)"
+    info "  • \$HOME/.local/bin       (user bins, e.g. claude)"
+    info "  • ${brew_prefix}/bin  (brew shellenv)"
+    info "  • \$HOME/.cargo/bin       (rust)"
 
     # POSIX shells: zsh + bash
     local posix_block
@@ -75,10 +80,14 @@ configure_shell_path() {
 [ -d "\$HOME/.cargo/bin" ] && export PATH="\$HOME/.cargo/bin:\$PATH"
 EOF
 )"
-    local f
+    local f label
     for f in "$HOME/.zshrc" "$HOME/.bashrc"; do
-        ensure_block "$f" "path" "$posix_block"
-        success "updated $(basename "$f")"
+        label="$(basename "$f")"
+        if ensure_block "$f" "path" "$posix_block"; then
+            success "$label: wrote/updated the setup-os:path block (4 entries above)"
+        else
+            info "$label: already current — no change"
+        fi
     done
 
     # fish
@@ -91,17 +100,20 @@ if test -x /home/linuxbrew/.linuxbrew/bin/brew; eval (/home/linuxbrew/.linuxbrew
 if test -d "$HOME/.cargo/bin"; fish_add_path -g "$HOME/.cargo/bin"; end
 EOF
 )"
-    ensure_block "$fish_cfg" "path" "$fish_block"
-    success "updated config.fish"
+    if ensure_block "$fish_cfg" "path" "$fish_block"; then
+        success "config.fish: wrote/updated the setup-os:path block (4 entries above)"
+    else
+        info "config.fish: already current — no change"
+    fi
 }
 configure_shell_path
 
 # ------------------------------------------------------------------------------
-# Step 3 — apps from software.yaml
+# Step 3 — apps: common software.yaml + Arch-specific software.arch.yaml
 # ------------------------------------------------------------------------------
-section "3) Apps (software.yaml)"
-SW_YAML="$(grab software.yaml)"
-install_software "$SW_YAML" || warning "Some apps failed — see summary above (safe to re-run)."
+section "3) Apps (software.yaml + software.arch.yaml)"
+install_software "$(grab software.yaml)" "$(grab software.arch.yaml)" \
+    || warning "Some apps failed — see summary above (safe to re-run)."
 
 # ------------------------------------------------------------------------------
 # Step 4 — CachyOS desktop dependencies for the mac-style layer

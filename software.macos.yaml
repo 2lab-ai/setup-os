@@ -1,0 +1,10 @@
+# ==============================================================================
+# software.macos.yaml — macOS-specific apps (applied after software.yaml)
+#
+# Placeholder pins — fill in real version baselines from a Mac later.
+# ==============================================================================
+
+xbrew:
+  - telegram
+  - slack
+  - nomachine

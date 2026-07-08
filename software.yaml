@@ -1,26 +1,27 @@
 # ==============================================================================
-# software.yaml — declarative, cross-platform tool manifest for setup-os
+# software.yaml — COMMON manifest (installed on every OS)
 #
-# Single source of truth for "apps I want on every machine".
-# Everything installs through xbrew — that's what xbrew is for: one
-# `xbrew install <name>` that auto-routes to brew / pacman / AUR / recipe per OS.
-# Add a line, re-run install.sh, only the new tool gets installed (idempotent).
+# Tools that install the same way everywhere via xbrew: my own cross-platform
+# builds (xbrew, llmux, herdr-mx-preview — Linux + macOS) and cross-platform CLIs.
+# OS-specific apps live in software.arch.yaml / software.macos.yaml and are
+# applied on top of this one.
 #
-#   trust:  custom Homebrew taps to register FIRST, so xbrew's brew backend can
-#           resolve formulae published there (our own tools on 2lab-ai/tap).
-#   xbrew:  installed via `xbrew install`. Built-in recipes today: telegram,
-#           slack, claude-code, nomachine, claude, rustdesk, sunshine, brew.
-#           Anything else falls back to brew (incl. trusted taps) / pacman / AUR.
+# Version constraints (optional per line): `name`, `name >= 1.2.3`, `name == 1.2.3`
+# (also > <= <). xbrew installs latest; the tag is the minimum baseline that gets
+# verified after install. Common tools share one version across OSes (single build).
+#
+#   trust:  custom Homebrew taps registered FIRST so xbrew's brew backend can
+#           resolve formulae published there (2lab-ai/tap). brew is installed by
+#           xbrew (`xbrew install brew`), never a curl|bash.
+#   xbrew:  installed via `xbrew install`.
 # ==============================================================================
 
 trust:
   - 2lab-ai/tap
 
 xbrew:
-  - telegram
-  - slack
-  - claude-code
-  - nomachine
-  - codex
-  - llmux
-  - herdr-mx-preview
+  - brew                    # Homebrew first — backend several tools install through
+  - claude-code >= 2.1.204
+  - codex                   # not installed locally yet — latest, no pin
+  - llmux >= 0.2.15
+  - herdr-mx-preview        # not installed locally yet — latest, no pin

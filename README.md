@@ -30,42 +30,50 @@ hands off to the matching installer. Override with `... | bash -s -- macos`.
 ```
 setup-os/
 ├── install.sh              # OS auto-detect → dispatch
-├── software.yaml           # declarative app manifest (the single source of truth)
+├── software.yaml           # COMMON manifest — my cross-platform tools (all OSes)
+├── software.arch.yaml      # Arch/CachyOS-specific apps (+ pinned versions)
+├── software.macos.yaml     # macOS-specific apps
 ├── lib/
-│   └── common.sh           # shared helpers: xbrew/brew bootstrap, YAML, idempotent config
+│   └── common.sh           # shared helpers: xbrew/brew bootstrap, YAML, versions, idempotent config
 ├── z13-cachyos/
 │   ├── install.sh          # full CachyOS setup (xbrew + apps + desktop + mac-style KDE)
 │   └── setup-macstyle.sh   # KDE Plasma mac-style IME + global shortcuts (per-login apply)
 └── macos/
-    └── install.sh          # placeholder — Homebrew + xbrew + apps only, for now
+    └── install.sh          # placeholder — xbrew + apps only, for now
 ```
+
+Each OS installer applies the **common** `software.yaml` first, then its
+**per-OS** manifest on top (`z13-cachyos` → `software.arch.yaml`, `macos` →
+`software.macos.yaml`). Shared cross-platform tools live in the common file;
+only genuinely OS-specific apps (and their per-OS version pins) are split out.
 
 ## Adding software
 
-Edit [`software.yaml`](software.yaml) and re-run the installer — only the new
-tool installs. **Everything installs through xbrew.**
+Put shared tools in [`software.yaml`](software.yaml); put OS-only tools in
+[`software.arch.yaml`](software.arch.yaml) / [`software.macos.yaml`](software.macos.yaml).
+Re-run the installer — only the new/unsatisfied tool is touched.
+**Everything installs through xbrew.**
 
 ```yaml
-trust:            # custom Homebrew taps registered FIRST (so xbrew can resolve them)
+trust:                       # custom Homebrew taps registered FIRST
   - 2lab-ai/tap
-xbrew:            # installed via `xbrew install` (brew / pacman / AUR / recipe)
-  - telegram
-  - slack
-  - claude-code
-  - nomachine
-  - codex
-  - llmux
-  - herdr-mx-preview
+xbrew:                       # installed via `xbrew install`
+  - brew                     # no constraint = latest
+  - claude-code >= 2.1.204   # minimum-version baseline, verified after install
+  - llmux >= 0.2.15
 ```
 
 - **xbrew** ([2lab-ai/xbrew](https://github.com/2lab-ai/xbrew)) is the one
   installer: `xbrew install <name>` picks the right backend per OS (brew /
   pacman / AUR / curated recipe) and records it so uninstall routes correctly.
 - The **only** thing bootstrapped via `curl … | bash` is xbrew itself.
-  Homebrew, when needed, is installed by xbrew (`xbrew install brew`) — not by
-  the upstream Homebrew installer.
+  Homebrew, when needed, is installed by xbrew (`xbrew install brew`).
 - **trust** taps are registered before installing so xbrew's brew backend can
   resolve formulae from our own `2lab-ai/tap` (llmux, herdr-mx-preview).
+- **Version tags** (`>=`, `==`, `>`, `<=`, `<`) are optional per line. xbrew
+  installs the latest; the tag is a baseline that is checked after install and
+  reported if unmet. Common-tool versions are shared across OSes (one build);
+  OS-specific pins live in the per-OS manifests.
 
 ## Idempotency
 
