@@ -1,20 +1,20 @@
 # ==============================================================================
 # software.yaml — declarative, cross-platform tool manifest for setup-os
 #
-# This is the single source of truth for "apps I want on every machine".
-# The OS installers read it and install anything still missing (idempotent):
-# add a line here, re-run install.sh, and only the new tool gets installed.
+# Single source of truth for "apps I want on every machine".
+# Everything installs through xbrew — that's what xbrew is for: one
+# `xbrew install <name>` that auto-routes to brew / pacman / AUR / recipe per OS.
+# Add a line, re-run install.sh, only the new tool gets installed (idempotent).
 #
-# Sections
-#   xbrew:      installed via `xbrew install <name>` — routes to the right
-#               backend (brew / pacman / AUR / curated recipe) per OS.
-#               Built-in xbrew recipes today: telegram, slack, claude-code,
-#               nomachine, claude, rustdesk, sunshine, brew. Anything else
-#               falls back to the native package manager / AUR.
-#   brew_taps:  custom Homebrew taps to register before installing brew tools.
-#   brew:       installed straight from Homebrew — used for our own tools
-#               published on 2lab-ai/tap (llmux, herdr-mx-preview).
+#   trust:  custom Homebrew taps to register FIRST, so xbrew's brew backend can
+#           resolve formulae published there (our own tools on 2lab-ai/tap).
+#   xbrew:  installed via `xbrew install`. Built-in recipes today: telegram,
+#           slack, claude-code, nomachine, claude, rustdesk, sunshine, brew.
+#           Anything else falls back to brew (incl. trusted taps) / pacman / AUR.
 # ==============================================================================
+
+trust:
+  - 2lab-ai/tap
 
 xbrew:
   - telegram
@@ -22,10 +22,5 @@ xbrew:
   - claude-code
   - nomachine
   - codex
-
-brew_taps:
-  - 2lab-ai/tap
-
-brew:
   - llmux
   - herdr-mx-preview

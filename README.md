@@ -43,32 +43,35 @@ setup-os/
 ## Adding software
 
 Edit [`software.yaml`](software.yaml) and re-run the installer — only the new
-tool installs.
+tool installs. **Everything installs through xbrew.**
 
 ```yaml
+trust:            # custom Homebrew taps registered FIRST (so xbrew can resolve them)
+  - 2lab-ai/tap
 xbrew:            # installed via `xbrew install` (brew / pacman / AUR / recipe)
   - telegram
   - slack
   - claude-code
   - nomachine
   - codex
-brew_taps:        # custom Homebrew taps
-  - 2lab-ai/tap
-brew:             # straight Homebrew — our own tools on 2lab-ai/tap
   - llmux
   - herdr-mx-preview
 ```
 
-- **xbrew** ([2lab-ai/xbrew](https://github.com/2lab-ai/xbrew)) is the primary
-  installer: `xbrew install <name>` picks the right backend per OS and records
-  it so uninstall routes correctly. Missing recipe → native package manager / AUR fallback.
-- **brew** section is for tools published on `2lab-ai/tap` (llmux, herdr-mx-preview).
+- **xbrew** ([2lab-ai/xbrew](https://github.com/2lab-ai/xbrew)) is the one
+  installer: `xbrew install <name>` picks the right backend per OS (brew /
+  pacman / AUR / curated recipe) and records it so uninstall routes correctly.
+- The **only** thing bootstrapped via `curl … | bash` is xbrew itself.
+  Homebrew, when needed, is installed by xbrew (`xbrew install brew`) — not by
+  the upstream Homebrew installer.
+- **trust** taps are registered before installing so xbrew's brew backend can
+  resolve formulae from our own `2lab-ai/tap` (llmux, herdr-mx-preview).
 
 ## Idempotency
 
 Every step is re-runnable and converges to the same state:
 
-- app installs skip anything already present (xbrew state + `brew list`),
+- app installs skip anything already present (xbrew records install state),
 - shell PATH edits live in sentinel-fenced blocks (`# >>> setup-os:path >>>`) that
   are replaced in place, never duplicated,
 - desktop packages use `pacman --needed`,

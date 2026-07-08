@@ -139,66 +139,60 @@ ensure_homebrew() {
         success "Homebrew present"
         return 0
     fi
-    log "Installing Homebrew..."
-    NONINTERACTIVE=1 /bin/bash -c \
-        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
-        || { warning "Homebrew install failed — brew: packages will be skipped"; return 1; }
+    # Homebrew is installed *through xbrew* (recipe: brew) — xbrew is the only
+    # thing we bootstrap via curl|bash; everything else routes through it.
+    log "Installing Homebrew via xbrew..."
+    ensure_xbrew
+    "$(xbrew_bin)" install brew || { warning "xbrew install brew failed — tap-based tools may fail"; return 1; }
     brew_bin >/dev/null || { warning "brew not found after install"; return 1; }
     eval "$("$(brew_bin)" shellenv)"
-    success "Homebrew installed"
+    success "Homebrew installed (via xbrew)"
 }
 
 # --- Software manifest installer ----------------------------------------------
 # install_software <software.yaml>
-# xbrew: list -> `xbrew install`; brew_taps:/brew: -> Homebrew (for 2lab-ai/tap tools).
+# trust: -> `brew tap` (Homebrew comes via `xbrew install brew`); then EVERYTHING
+# installs through `xbrew install` (routes to brew / pacman / AUR / recipe).
 install_software() {
     local yaml="$1"
     [[ -f "$yaml" ]] || die "software manifest not found: $yaml"
     local -a ok=() fail=()
 
-    # ---- xbrew-managed tools ----
-    local xpkgs; xpkgs="$(yaml_list "$yaml" xbrew)"
-    if [[ -n "$xpkgs" ]]; then
-        ensure_xbrew
-        local xb; xb="$(xbrew_bin)"
-        local pkg
-        while IFS= read -r pkg; do
-            [[ -z "$pkg" ]] && continue
-            log "xbrew install $pkg"
-            if "$xb" install "$pkg"; then ok+=("xbrew:$pkg"); else fail+=("xbrew:$pkg"); fi
-        done <<< "$xpkgs"
-    fi
+    ensure_xbrew
+    local xb; xb="$(xbrew_bin)"
 
-    # ---- Homebrew-managed tools (e.g. 2lab-ai/tap) ----
-    local bpkgs; bpkgs="$(yaml_list "$yaml" brew)"
-    if [[ -n "$bpkgs" ]]; then
+    # ---- Trust custom Homebrew taps FIRST, so xbrew's brew backend can resolve
+    #      formulae published there (our own tools on 2lab-ai/tap). brew itself
+    #      is installed by xbrew (recipe: brew), not by any curl|bash. ----
+    local taps; taps="$(yaml_list "$yaml" trust)"
+    if [[ -n "$taps" ]]; then
         if ensure_homebrew; then
             local bb; bb="$(brew_bin)"
-            local tap
-            while IFS= read -r tap; do
-                [[ -z "$tap" ]] && continue
-                "$bb" tap "$tap" >/dev/null 2>&1 || warning "brew tap $tap failed"
-            done <<< "$(yaml_list "$yaml" brew_taps)"
-            local pkg
-            while IFS= read -r pkg; do
-                [[ -z "$pkg" ]] && continue
-                if "$bb" list "$pkg" >/dev/null 2>&1; then
-                    success "brew $pkg already installed"; ok+=("brew:$pkg")
-                else
-                    log "brew install $pkg"
-                    if "$bb" install "$pkg"; then ok+=("brew:$pkg"); else fail+=("brew:$pkg"); fi
-                fi
-            done <<< "$bpkgs"
+            local t
+            while IFS= read -r t; do
+                [[ -z "$t" ]] && continue
+                log "trust tap: $t"
+                "$bb" tap "$t" >/dev/null 2>&1 && success "tapped $t" || warning "brew tap $t failed"
+            done <<< "$taps"
         else
-            while IFS= read -r pkg; do [[ -n "$pkg" ]] && fail+=("brew:$pkg"); done <<< "$bpkgs"
+            warning "Homebrew unavailable — tap-based tools may fail to resolve"
         fi
     fi
+
+    # ---- Everything installs through xbrew ----
+    local xpkgs; xpkgs="$(yaml_list "$yaml" xbrew)"
+    local pkg
+    while IFS= read -r pkg; do
+        [[ -z "$pkg" ]] && continue
+        log "xbrew install $pkg"
+        if "$xb" install "$pkg"; then ok+=("$pkg"); else fail+=("$pkg"); fi
+    done <<< "$xpkgs"
 
     # ---- Report ----
     section "Software summary"
     ((${#ok[@]}))   && success "installed/ok: ${ok[*]}"
     if ((${#fail[@]})); then
-        warning "failed (re-run install.sh after fixing, or add an xbrew recipe): ${fail[*]}"
+        warning "failed (re-run after fixing, or add an xbrew recipe): ${fail[*]}"
         return 1
     fi
     return 0

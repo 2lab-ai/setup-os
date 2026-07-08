@@ -36,9 +36,8 @@ have curl || die "curl is required"
 section "▐ setup-os — macOS (placeholder)"
 info "user: $(whoami)   macOS: $(sw_vers -productVersion 2>/dev/null || echo '?')   arch: $(uname -m)"
 
-# 1) Homebrew + xbrew
-section "1) Homebrew + xbrew"
-ensure_homebrew || warning "Homebrew unavailable"
+# 1) xbrew (the only curl|bash bootstrap; brew arrives later via `xbrew install brew`)
+section "1) xbrew"
 ensure_xbrew
 
 # 2) shell PATH (zsh — default macOS shell)
