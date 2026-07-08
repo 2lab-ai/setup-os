@@ -54,6 +54,31 @@ if [[ -r /etc/os-release ]]; then
 fi
 
 # ------------------------------------------------------------------------------
+# Step 0 — Snapshot (before anything changes)
+#   Later steps edit bootloader kernel params, install packages, etc. Offer a
+#   snapper snapshot up front so a bad run is one rollback away. Skipped if a
+#   setup-os snapshot already exists (no piling up on re-runs).
+# ------------------------------------------------------------------------------
+section "0) Pre-setup snapshot"
+maybe_snapshot() {
+    have snapper || { info "snapper not installed — skipping snapshot"; return 0; }
+    if ! ask_yn "Take a snapper snapshot before making changes? (recommended)" Y; then
+        info "skipping snapshot (your call)"
+        return 0
+    fi
+    if sudo snapper list 2>/dev/null | grep -q "setup-os pre-install"; then
+        info "a 'setup-os pre-install' snapshot already exists — not creating another."
+        return 0
+    fi
+    if sudo snapper create --type single --description "setup-os pre-install $(date +%F_%H%M)"; then
+        success "snapshot created — roll back later with: sudo snapper undochange <n>..0 (or snapper rollback)"
+    else
+        warning "snapshot failed (is the snapper 'root' config set up? 'sudo snapper -c root create') — continuing"
+    fi
+}
+maybe_snapshot
+
+# ------------------------------------------------------------------------------
 # Step 1 — xbrew
 # ------------------------------------------------------------------------------
 section "1) xbrew"

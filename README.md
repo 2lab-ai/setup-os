@@ -109,8 +109,9 @@ It applies GZ302 hardware fixes — WiFi, GPU, Input, Audio, Display, Suspend �
 installs **z13ctl** (RGB, power profiles, TDP, fan curves). Gaming/AI/hypervisor
 modules are skipped (`--no-modules`); apps are xbrew's job. It auto-detects the
 device and no-ops the fixes on non-Strix-Halo hardware. **Note:** this step
-includes a system update and edits bootloader kernel params — take a
-`sudo snapper create` snapshot first.
+includes a system update and edits bootloader kernel params — the installer's
+**step 0 offers a snapper snapshot** (y/n, default yes) before anything changes,
+so a bad run is one rollback away.
 
 After the first run, log out and back in once to fully activate the IME
 environment variables and app-launch shortcuts, and reboot to apply the

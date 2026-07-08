@@ -35,6 +35,23 @@ section() { printf '\n%s%s%s\n' "$C_BOLD" "$*" "$C_RESET"; }
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# ask_yn <prompt> [default Y|N] -> 0=yes, 1=no.
+# Reads from /dev/tty so it still prompts under `curl … | bash` (where stdin is
+# the script itself). Falls back to the default when there is no terminal.
+ask_yn() {
+    local prompt="$1" default="${2:-Y}" ans hint
+    case "$default" in [Yy]*) hint="[Y/n]";; *) hint="[y/N]";; esac
+    if [[ -r /dev/tty ]]; then
+        printf '%s%s%s %s ' "$C_BOLD" "$prompt" "$C_RESET" "$hint" > /dev/tty
+        read -r ans < /dev/tty || ans=""
+    else
+        ans=""
+        info "no terminal — assuming '$default' for: $prompt"
+    fi
+    [[ -z "$ans" ]] && ans="$default"
+    case "$ans" in [Yy]*) return 0;; *) return 1;; esac
+}
+
 # --- File fetch (local-or-download) -------------------------------------------
 # grab <repo-relative-path> -> prints a usable local path to that file.
 _SETUP_OS_CACHE=""
