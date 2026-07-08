@@ -146,7 +146,44 @@ MACSTYLE="$(grab z13-cachyos/setup-macstyle.sh)"
 bash "$MACSTYLE" --no-install || warning "mac-style setup reported issues (see above)"
 
 # ------------------------------------------------------------------------------
+# Step 6 — Strix Halo hardware enablement (ASUS ROG Flow Z13 GZ302)
+#   WiFi / GPU / Input / Audio / Display / Suspend fixes + z13ctl
+#   (RGB, power profiles, TDP, fan curves). Upstream:
+#   github.com/th3cavalry/strix-halo-linux-setup, pinned to a reviewed commit.
+#   The whole repo is cloned so the libraries it sources are the reviewed ones
+#   (not a moving `main`). Gaming/AI/hypervisor modules are skipped (--no-modules)
+#   — apps are xbrew's job. The script auto-detects the device and no-ops the
+#   hardware fixes on anything that isn't confirmed Strix Halo.
+# ------------------------------------------------------------------------------
+section "6) Strix Halo hardware setup (z13ctl, WiFi/GPU/Audio/Suspend fixes)"
+install_strix_halo() {
+    have git || { warning "git not found — skipping Strix Halo setup"; return 1; }
+    local repo="https://github.com/th3cavalry/strix-halo-linux-setup.git"
+    local ref="${STRIX_HALO_REF:-4a058283ac035a34429eb1f30b1185de40270c65}"
+    local dir="${XDG_CACHE_HOME:-$HOME/.cache}/setup-os/strix-halo"
+
+    if [[ -d "$dir/.git" ]]; then
+        git -C "$dir" fetch -q origin || warning "strix-halo fetch failed (using existing checkout)"
+    else
+        mkdir -p "$(dirname "$dir")"
+        git clone -q "$repo" "$dir" || { warning "strix-halo clone failed — skipping"; return 1; }
+    fi
+    if ! git -C "$dir" checkout -q "$ref" 2>/dev/null; then
+        warning "could not pin strix-halo to ${ref:0:12} — using default branch"
+    else
+        info "pinned strix-halo to ${ref:0:12} (security-reviewed)"
+    fi
+
+    info "Running upstream setup via sudo: hardware fixes + z13ctl, skipping gaming/AI modules."
+    info "(includes a system update; modifies bootloader kernel params — backups are made.)"
+    sudo bash "$dir/strix-halo-setup.sh" -y --no-modules \
+        || warning "strix-halo setup reported issues (see output above)"
+}
+install_strix_halo
+
+# ------------------------------------------------------------------------------
 section "✅ Done — z13-cachyos"
 info "Open a new shell (or: exec \$SHELL) to pick up PATH changes."
-info "First run: log out / back in once to fully activate IME env vars + app-launch shortcuts."
+info "First run: log out / back in once for IME env vars + app-launch shortcuts."
+info "Reboot to apply Strix Halo hardware/kernel changes; then: z13ctl status"
 info "Re-run this any time; add tools to software.yaml to install more."

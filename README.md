@@ -89,12 +89,24 @@ Every step is re-runnable and converges to the same state:
 ## z13-cachyos details
 
 Steps: install xbrew → configure shell PATH (zsh/fish/bash) → install
-`software.yaml` apps → install desktop deps (fcitx5 Hangul IME, Spectacle,
-wl-clipboard, CJK fonts) → apply mac-style KDE setup (Shift+Space Han/Eng
-toggle, mac-like global shortcuts, per-login re-apply hook).
+`software.yaml` + `software.arch.yaml` apps → install desktop deps (fcitx5
+Hangul IME, Spectacle, wl-clipboard, CJK fonts) → apply mac-style KDE setup
+(Shift+Space Han/Eng toggle, mac-like global shortcuts, per-login re-apply hook)
+→ **Strix Halo hardware enablement**.
+
+The last step runs [th3cavalry/strix-halo-linux-setup](https://github.com/th3cavalry/strix-halo-linux-setup)
+(pinned to a security-reviewed commit; the whole repo is cloned so the sourced
+libraries match the review) to apply GZ302 hardware fixes — WiFi, GPU, Input,
+Audio, Display, Suspend — and install **z13ctl** (RGB, power profiles, TDP, fan
+curves). Gaming/AI/hypervisor modules are skipped (`--no-modules`); apps are
+xbrew's job. It auto-detects the device and no-ops the fixes on non-Strix-Halo
+hardware. Override the pin with `STRIX_HALO_REF=<ref>`. Note: this step includes
+a system update and edits bootloader kernel params (it backs them up first) — a
+snapshot beforehand is wise.
 
 After the first run, log out and back in once to fully activate the IME
-environment variables and app-launch shortcuts.
+environment variables and app-launch shortcuts, and reboot to apply the
+hardware/kernel changes.
 
 ---
 
