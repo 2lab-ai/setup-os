@@ -112,16 +112,18 @@ xbrew_bin() {
 
 ensure_xbrew() {
     if xbrew_bin >/dev/null; then
-        success "xbrew present ($("$(xbrew_bin)" --version 2>/dev/null || echo installed))"
+        local xb; xb="$(xbrew_bin)"
+        log "xbrew present ($("$xb" --version 2>/dev/null)) — updating to latest..."
+        "$xb" self-update || warning "xbrew self-update failed (keeping current version)"
+        success "xbrew ready ($("$xb" --version 2>/dev/null))"
     else
         log "Installing xbrew..."
         curl -fsSL "$XBREW_INSTALL_URL" | bash || die "xbrew install failed"
         xbrew_bin >/dev/null || die "xbrew not found after install"
-        success "xbrew installed"
+        success "xbrew installed ($("$(xbrew_bin)" --version 2>/dev/null))"
     fi
     # Make it usable in this process regardless of shell rc.
-    local xb; xb="$(xbrew_bin)"
-    export PATH="$(dirname "$xb"):$PATH"
+    export PATH="$(dirname "$(xbrew_bin)"):$PATH"
 }
 
 # --- Homebrew -----------------------------------------------------------------
