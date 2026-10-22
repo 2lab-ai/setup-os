@@ -2,6 +2,20 @@
 
 All notable changes to Strix Halo Linux Setup will be documented in this file.
 
+## [Unreleased]
+
+Local patch in the setup-os vendored copy (2026-10-22), not an upstream release; `VERSION` stays 6.8.0.
+
+### Fixed
+- **Suspend never reaching s0i3 (battery drain while asleep)**: `/etc/modprobe.d/amdgpu.conf` no longer sets `ppfeaturemask=0xffff7fff`. That mask clears GFXOFF (`0x8000`); with GFXOFF off, the s2idle path leaves the GPU powered, so every suspend logged `amd_pmc ... Last suspend didn't reach deepest state` and `/sys/power/suspend_stats/total_hw_sleep` stayed 0 on a GZ302EA (kernel 7.2.6). The kernel default mask keeps GFXOFF on.
+
+### Changed
+- `strix-halo-lib/gpu-manager.sh`: `gpu_ppfeaturemask_configured` now requires that no active `options amdgpu ppfeaturemask=` line exists, so a re-run rewrites an old `amdgpu.conf` and regenerates the initramfs. `gpu_kernel_params_set` is replaced by `gpu_kernel_ppfeaturemask_override_set`, which flags an `amdgpu.ppfeaturemask=` bootloader param as a leftover to remove (state key `kernel_ppfeaturemask_override`, warning in `gpu_print_status`).
+- `docs/technical/kernel-support.md`: `amdgpu.ppfeaturemask=0xffff7fff` removed from the required kernel parameters, with a warning not to set it.
+
+### Added
+- `tests/gpu-manager-ppfeaturemask.sh`: root-free regression checks for the policy above (old `amdgpu.conf` reads as not configured, re-run rewrites it once and regenerates the initramfs, commented lines are ignored, kernel cmdline override is flagged, status warnings). Runs against a temp copy of the library with `/etc`, `/boot` and `/efi` paths redirected and `gpu_regenerate_initramfs` stubbed.
+
 ## [6.8.0] - 2026-05-23
 
 ### Added

@@ -72,8 +72,10 @@ sudo apt-get install linux-generic-hwe-24.04  # Gets 6.17+
 
 ### Required Kernel Parameters
 ```
-amd_pstate=guided amdgpu.ppfeaturemask=0xffff7fff
+amd_pstate=guided
 ```
+
+Do **not** set `amdgpu.ppfeaturemask=0xffff7fff` (kernel cmdline or modprobe): it clears GFXOFF (0x8000), so s2idle suspend never reaches s0i3 and the battery drains while asleep.
 
 ### AI/LLM Workloads (Optional)
 ```

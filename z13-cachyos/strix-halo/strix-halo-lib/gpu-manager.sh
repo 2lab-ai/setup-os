@@ -12,8 +12,8 @@ set -euo pipefail
 # Key Features:
 # - GPU hardware detection
 # - Firmware verification
-# - Power feature mask configuration
-# - Kernel parameter management
+# - amdgpu modprobe options (ppfeaturemask left at kernel default)
+# - Kernel parameter checks
 # - ROCm compatibility setup
 #
 # Usage:
@@ -141,12 +141,19 @@ gpu_verify_firmware() {
 
 # --- Configuration State Detection ---
 
-# Check if amdgpu ppfeaturemask is configured
+# Check if the amdgpu modprobe config is in the desired state:
+# abmlevel=0, sg_display=0 and cwsr_enable=0 present, and NO active
+# "options amdgpu ppfeaturemask=" line. Older versions wrote
+# ppfeaturemask=0xffff7fff (GFXOFF cleared), which blocks s0i3; such a file
+# reads as not configured so a re-run rewrites it.
 # Returns: 0 if configured, 1 if not configured
 gpu_ppfeaturemask_configured() {
     if [[ -f /etc/modprobe.d/amdgpu.conf ]]; then
-        if grep -q "ppfeaturemask=0xffff7fff" /etc/modprobe.d/amdgpu.conf 2>/dev/null && \
-           grep -q "abmlevel=0" /etc/modprobe.d/amdgpu.conf 2>/dev/null && \
+        if grep -Eq '^[[:space:]]*options[[:space:]]+amdgpu[[:space:]][^#]*ppfeaturemask=' \
+               /etc/modprobe.d/amdgpu.conf 2>/dev/null; then
+            return 1
+        fi
+        if grep -q "abmlevel=0" /etc/modprobe.d/amdgpu.conf 2>/dev/null && \
            grep -q "sg_display=0" /etc/modprobe.d/amdgpu.conf 2>/dev/null && \
            grep -q "cwsr_enable=0" /etc/modprobe.d/amdgpu.conf 2>/dev/null; then
             return 0
@@ -165,22 +172,26 @@ gpu_get_ppfeaturemask() {
     fi
 }
 
-# Check if GPU kernel parameters are set in bootloader
-# Returns: 0 if set, 1 if not set
-gpu_kernel_params_set() {
+# Check if a bootloader config overrides amdgpu.ppfeaturemask on the kernel
+# cmdline. This setup no longer sets it: the old value 0xffff7fff clears
+# GFXOFF (0x8000), and with GFXOFF off s2idle never reaches s0i3 on Strix
+# Halo. A match is a leftover to remove, not desired config.
+# Returns: 0 if an (uncommented) override is present, 1 if not
+gpu_kernel_ppfeaturemask_override_set() {
     local grub_set=false
     local cmdline_set=false
+    local pattern='^[^#]*amdgpu\.ppfeaturemask='
     
     # Check GRUB
     if [[ -f /etc/default/grub ]]; then
-        if grep -q "amdgpu.ppfeaturemask=0xffff7fff" /etc/default/grub 2>/dev/null; then
+        if grep -Eq "$pattern" /etc/default/grub 2>/dev/null; then
             grub_set=true
         fi
     fi
     
     # Check kernel cmdline (systemd-boot)
     if [[ -f /etc/kernel/cmdline ]]; then
-        if grep -q "amdgpu.ppfeaturemask=0xffff7fff" /etc/kernel/cmdline 2>/dev/null; then
+        if grep -Eq "$pattern" /etc/kernel/cmdline 2>/dev/null; then
             cmdline_set=true
         fi
     fi
@@ -188,21 +199,21 @@ gpu_kernel_params_set() {
     # Check Limine bootloader configs
     local limine_cfg
     for limine_cfg in /etc/limine/limine.conf /boot/limine/limine.conf /boot/limine.cfg; do
-        if [[ -f "$limine_cfg" ]] && grep -q "amdgpu.ppfeaturemask=0xffff7fff" "$limine_cfg" 2>/dev/null; then
+        if [[ -f "$limine_cfg" ]] && grep -Eq "$pattern" "$limine_cfg" 2>/dev/null; then
             cmdline_set=true
         fi
     done
 
     # Check rEFInd per-kernel and global configs
     if [[ -f /boot/refind_linux.conf ]] && \
-       grep -q "amdgpu.ppfeaturemask=0xffff7fff" /boot/refind_linux.conf 2>/dev/null; then
+       grep -Eq "$pattern" /boot/refind_linux.conf 2>/dev/null; then
         cmdline_set=true
     fi
     local refind_cfg
     for refind_cfg in /boot/EFI/refind/refind.conf /boot/efi/EFI/refind/refind.conf \
                       /efi/EFI/refind/refind.conf; do
         if [[ -f "$refind_cfg" ]] && \
-           grep -q "amdgpu.ppfeaturemask=0xffff7fff" "$refind_cfg" 2>/dev/null; then
+           grep -Eq "$pattern" "$refind_cfg" 2>/dev/null; then
             cmdline_set=true
         fi
     done
@@ -217,7 +228,7 @@ gpu_get_state() {
     local hardware_present="false"
     local module_loaded="false"
     local ppfeaturemask_configured="false"
-    local kernel_params_set="false"
+    local kernel_ppfeaturemask_override="false"
     local firmware_complete="false"
     local device_id="unknown"
     
@@ -234,8 +245,8 @@ gpu_get_state() {
         ppfeaturemask_configured="true"
     fi
     
-    if gpu_kernel_params_set; then
-        kernel_params_set="true"
+    if gpu_kernel_ppfeaturemask_override_set; then
+        kernel_ppfeaturemask_override="true"
     fi
     
     if gpu_verify_firmware >/dev/null 2>&1; then
@@ -248,7 +259,7 @@ gpu_get_state() {
     "device_id": "$device_id",
     "module_loaded": "$module_loaded",
     "ppfeaturemask_configured": "$ppfeaturemask_configured",
-    "kernel_params_set": "$kernel_params_set",
+    "kernel_ppfeaturemask_override": "$kernel_ppfeaturemask_override",
     "firmware_complete": "$firmware_complete",
     "current_ppfeaturemask": "$(gpu_get_ppfeaturemask)"
 }
@@ -269,11 +280,10 @@ gpu_apply_modprobe_config() {
     cat > /etc/modprobe.d/amdgpu.conf <<'EOF'
 # AMD GPU configuration for Radeon 8060S (RDNA 3.5, integrated)
 # Strix Halo specific: Phoenix/Navi33 equivalent
-# Enable all power features for better performance and efficiency
 # ROCm-compatible for AI/ML workloads
-# 0xffff7fff: all bits enabled except bit 15 (GFXOFF) — de-risks RDNA 3.5
-# GFXOFF causes hangs under rapid power-state transitions on Strix Halo iGPU.
-options amdgpu ppfeaturemask=0xffff7fff
+# ppfeaturemask is intentionally NOT overridden. Clearing GFXOFF (0x8000)
+# blocks s0i3 on Strix Halo: suspend never reaches hardware sleep, so the
+# battery drains and the device runs hot. The kernel default keeps GFXOFF on.
 # abmlevel=0: disable Adaptive Backlight Management — not applicable/safe on OLED
 # (OLED panels report oled=1 in DPCD ext_caps; ABM is skipped by driver anyway)
 options amdgpu abmlevel=0
@@ -380,7 +390,7 @@ gpu_apply_configuration() {
     gpu_configure_early_kms
     
     if gpu_ppfeaturemask_configured; then
-        echo "GPU ppfeaturemask configured successfully"
+        echo "GPU modprobe config applied (abmlevel/sg_display/cwsr; ppfeaturemask left at kernel default)"
     else
         echo "WARNING: GPU configuration may not have applied"
         return 1
@@ -482,6 +492,7 @@ gpu_print_status() {
     local device_id
     local module_loaded
     local ppfeaturemask_configured
+    local kernel_ppfeaturemask_override
     local firmware_complete
     local current_mask
     
@@ -489,6 +500,7 @@ gpu_print_status() {
     device_id=$(echo "$state" | grep "device_id" | cut -d'"' -f4)
     module_loaded=$(echo "$state" | grep "module_loaded" | cut -d'"' -f4)
     ppfeaturemask_configured=$(echo "$state" | grep "ppfeaturemask_configured" | cut -d'"' -f4)
+    kernel_ppfeaturemask_override=$(echo "$state" | grep "kernel_ppfeaturemask_override" | cut -d'"' -f4)
     firmware_complete=$(echo "$state" | grep "firmware_complete" | cut -d'"' -f4)
     current_mask=$(echo "$state" | grep "current_ppfeaturemask" | cut -d'"' -f4)
     
@@ -496,16 +508,23 @@ gpu_print_status() {
     echo "  Hardware Present:    $hardware_present"
     echo "  Device ID:           $device_id"
     echo "  Module Loaded:       $module_loaded"
-    echo "  PPFeatureMask:       $ppfeaturemask_configured"
+    echo "  Modprobe Config:     $ppfeaturemask_configured"
     echo "  Current Mask:        $current_mask"
     echo "  Firmware Complete:   $firmware_complete"
     
     # Check for issues
     if [[ "$ppfeaturemask_configured" == "false" ]]; then
-        echo "  ⚠️  WARNING: PPFeatureMask not configured"
-        echo "      Run 'gpu_apply_configuration' to configure"
+        echo "  ⚠️  WARNING: amdgpu modprobe config missing or outdated"
+        echo "      Run 'gpu_apply_configuration' to rewrite /etc/modprobe.d/amdgpu.conf"
+        echo "      (removes any ppfeaturemask override; GFXOFF must stay on for s0i3)"
     fi
     
+    if [[ "$kernel_ppfeaturemask_override" == "true" ]]; then
+        echo "  ⚠️  WARNING: amdgpu.ppfeaturemask is set on the kernel cmdline"
+        echo "      Remove it from the bootloader config; the old 0xffff7fff value"
+        echo "      disables GFXOFF and keeps suspend out of s0i3 (battery drain)"
+    fi
+
     if [[ "$firmware_complete" == "false" ]]; then
         echo "  ⚠️  WARNING: Some firmware files missing"
         echo "      GPU may not function optimally"
@@ -537,9 +556,13 @@ Firmware Functions:
   gpu_verify_firmware           - Verify all required firmware files
 
 State Check Functions:
-  gpu_ppfeaturemask_configured  - Check if ppfeaturemask is configured
+  gpu_ppfeaturemask_configured  - Check amdgpu.conf has abmlevel/sg_display/cwsr
+                                  options and no ppfeaturemask override
   gpu_get_ppfeaturemask         - Get current ppfeaturemask value
-  gpu_kernel_params_set         - Check if kernel params are set
+  gpu_kernel_ppfeaturemask_override_set
+                                - Check if a bootloader sets amdgpu.ppfeaturemask
+                                  (leftover override to remove; the old 0xffff7fff
+                                  value disables GFXOFF and blocks s0i3)
   gpu_get_state                 - Get comprehensive state (JSON)
 
 Configuration Functions (idempotent):

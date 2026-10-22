@@ -28,9 +28,15 @@ vendored tree with a git submodule pinned to the same commit).
 
 ## Local modifications
 
-**None.** The tree is copied verbatim except that `.git/` and `.github/` were
-removed. Do not hand-edit files here; to update, re-vendor from a new upstream
-commit and re-run the security review (`SECURITY-REVIEW.md`).
+The tree is copied verbatim except that `.git/` and `.github/` were removed,
+plus the local patch below. Do not hand-edit files here otherwise; to update,
+re-vendor from a new upstream commit and re-run the security review
+(`SECURITY-REVIEW.md`). **A re-vendor must re-apply (or confirm upstream has)
+each local patch.**
+
+| Date | Files | Change | Why |
+|---|---|---|---|
+| 2026-10-22 | `strix-halo-lib/gpu-manager.sh`, `docs/technical/kernel-support.md`, `docs/CHANGELOG.md`, `tests/gpu-manager-ppfeaturemask.sh` (new) | Stop writing `options amdgpu ppfeaturemask=0xffff7fff`; treat an existing active line (or a bootloader `amdgpu.ppfeaturemask=`) as outdated | The mask clears GFXOFF (`0x8000`), which keeps s2idle out of s0i3 on Strix Halo (GZ302EA: `total_hw_sleep=0`, battery drain while asleep) — see the `[Unreleased]` entry in `docs/CHANGELOG.md` |
 
 ## How it is invoked
 
